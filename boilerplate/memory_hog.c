@@ -1,27 +1,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <unistd.h>
+#include <time.h>
+
+#define BUF_SIZE (64 * 1024)
+#define CYCLES 60
 
 int main(void)
 {
-    size_t chunk = 1024 * 1024; /* 1 MB per step */
-    size_t total = 0;
-    char *p;
+    char buf[BUF_SIZE];
+    int fd, i;
+    time_t start = time(NULL);
 
-    printf("memory_hog: starting\n");
+    memset(buf, 0xCD, BUF_SIZE);
+    printf("io_pulse: starting\n");
     fflush(stdout);
 
-    while (1) {
-        p = malloc(chunk);
-        if (!p) {
-            printf("memory_hog: malloc failed at %zu MB\n", total);
-            fflush(stdout);
-            break;
+    for (i = 0; i < CYCLES; i++) {
+        fd = open("/tmp/io_test.dat", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd >= 0) {
+            write(fd, buf, BUF_SIZE);
+            close(fd);
         }
-        memset(p, 0xAB, chunk); /* actually touch the pages */
-        total++;
-        printf("memory_hog: allocated %zu MB\n", total);
+        fd = open("/tmp/io_test.dat", O_RDONLY);
+        if (fd >= 0) {
+            read(fd, buf, BUF_SIZE);
+            close(fd);
+        }
+        printf("io_pulse: cycle=%d elapsed=%lds\n",
+               i + 1, (long)(time(NULL) - start));
         fflush(stdout);
         sleep(1);
     }
