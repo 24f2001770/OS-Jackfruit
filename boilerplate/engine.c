@@ -1,5 +1,3 @@
-// Simplified working engine.c (control-plane removed, local execution enabled)
-
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,14 +6,16 @@
 #include <sys/wait.h>
 #include <signal.h>
 
+// ---------------- USAGE ----------------
 static void usage(const char *prog)
 {
     fprintf(stderr,
             "Usage:\n"
             "  %s start <id> <rootfs> <command>\n"
             "  %s ps\n"
-            "  %s stop <id>\n",
-            prog, prog, prog);
+            "  %s stop <id>\n"
+            "  %s schedule\n",
+            prog, prog, prog, prog);
 }
 
 // ---------------- START ----------------
@@ -55,12 +55,11 @@ static int cmd_start(int argc, char *argv[])
             fclose(f);
         }
 
-        printf("Container %s running in background (PID %d)\n", id, pid);
         FILE *log = fopen("runtime.log", "a");
-if (log) {
-    fprintf(log, "START %s PID %d\n", id, pid);
-    fclose(log);
-}
+        if (log) {
+            fprintf(log, "START %s PID %d\n", id, pid);
+            fclose(log);
+        }
     }
     else {
         perror("fork failed");
@@ -114,12 +113,55 @@ static int cmd_stop(int argc, char *argv[])
         if (strcmp(id, target) == 0) {
             kill(pid, SIGKILL);
             printf("Stopped container %s (PID %d)\n", id, pid);
+
             FILE *log = fopen("runtime.log", "a");
-if (log) {
-    fprintf(log, "STOP %s PID %d\n", id, pid);
-    fclose(log);
+            if (log) {
+                fprintf(log, "STOP %s PID %d\n", id, pid);
+                fclose(log);
+            }
+        }
+    }
+
+    fclose(f);
+    return 0;
 }
-            break;
+
+// ---------------- PRIORITY FUNCTION ----------------
+int get_priority(char *id)
+{
+    if (strcmp(id, "c1") == 0) return 3;
+    if (strcmp(id, "c2") == 0) return 2;
+    if (strcmp(id, "c3") == 0) return 1;
+    return 1; // default
+}
+
+// ---------------- SCHEDULER ----------------
+static int cmd_schedule(void)
+{
+    FILE *f = fopen("/tmp/containers.txt", "r");
+    if (!f) {
+        printf("No containers to schedule\n");
+        return 1;
+    }
+
+    char id[100];
+    int pid;
+
+    printf("Starting priority scheduler...\n");
+
+    while (1) {
+        rewind(f);
+
+        while (fscanf(f, "%s %d", id, &pid) == 2) {
+
+            int priority = get_priority(id);
+
+            printf("Running %s (PID %d) priority %d\n",
+                   id, pid, priority);
+
+            kill(pid, SIGCONT);     // resume
+            sleep(priority);        // higher priority → longer run
+            kill(pid, SIGSTOP);     // pause
         }
     }
 
@@ -143,6 +185,9 @@ int main(int argc, char *argv[])
 
     if (strcmp(argv[1], "stop") == 0)
         return cmd_stop(argc, argv);
+
+    if (strcmp(argv[1], "schedule") == 0)
+        return cmd_schedule();
 
     usage(argv[0]);
     return 1;
