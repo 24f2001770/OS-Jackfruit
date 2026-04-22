@@ -1,66 +1,38 @@
-/*
- * io_pulse.c - I/O-oriented workload for scheduler experiments.
- *
- * Usage:
- *   /io_pulse [iterations] [sleep_ms]
- *
- * The program writes small bursts to a file and sleeps between them.
- * This gives students an easy I/O-heavy workload to compare with
- * cpu_hog when discussing responsiveness and scheduler behavior.
- *
- * If you copy this binary into an Alpine rootfs, make sure it is built in a
- * format that can run there.
- */
-
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
+#include <fcntl.h>
 #include <unistd.h>
+#include <time.h>
 
-#define DEFAULT_OUTPUT "/tmp/io_pulse.out"
+#define BUF_SIZE (64 * 1024)
+#define CYCLES 60
 
-static unsigned int parse_uint(const char *arg, unsigned int fallback)
+int main(void)
 {
-    char *end = NULL;
-    unsigned long value = strtoul(arg, &end, 10);
+    char buf[BUF_SIZE];
+    int fd, i;
+    time_t start = time(NULL);
 
-    if (!arg || *arg == '\0' || (end && *end != '\0') || value == 0)
-        return fallback;
-    return (unsigned int)value;
-}
+    memset(buf, 0xCD, BUF_SIZE);
+    printf("io_pulse: starting\n");
+    fflush(stdout);
 
-int main(int argc, char *argv[])
-{
-    const unsigned int iterations = (argc > 1) ? parse_uint(argv[1], 20) : 20;
-    const unsigned int sleep_ms = (argc > 2) ? parse_uint(argv[2], 200) : 200;
-    int fd;
-    unsigned int i;
-
-    fd = open(DEFAULT_OUTPUT, O_CREAT | O_WRONLY | O_TRUNC, 0644);
-    if (fd < 0) {
-        perror("open");
-        return 1;
-    }
-
-    for (i = 0; i < iterations; i++) {
-        char line[128];
-        int len = snprintf(line, sizeof(line), "io_pulse iteration=%u\n", i + 1);
-
-        if (write(fd, line, (size_t)len) != len) {
-            perror("write");
+    for (i = 0; i < CYCLES; i++) {
+        fd = open("/tmp/io_test.dat", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd >= 0) {
+            write(fd, buf, BUF_SIZE);
             close(fd);
-            return 1;
         }
-
-        fsync(fd);
-        printf("io_pulse wrote iteration=%u\n", i + 1);
+        fd = open("/tmp/io_test.dat", O_RDONLY);
+        if (fd >= 0) {
+            read(fd, buf, BUF_SIZE);
+            close(fd);
+        }
+        printf("io_pulse: cycle=%d elapsed=%lds\n",
+               i + 1, (long)(time(NULL) - start));
         fflush(stdout);
-        usleep(sleep_ms * 1000U);
+        sleep(1);
     }
-
-    close(fd);
     return 0;
 }
